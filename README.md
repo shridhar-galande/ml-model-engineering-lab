@@ -42,5 +42,4 @@ Each week's work is stored in its own folder with the relevant notebooks, source
 ├── Week_3/
 └── ...
 ```
-End
 ---
