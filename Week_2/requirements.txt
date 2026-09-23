@@ -1,0 +1,9 @@
+# Core dependencies used directly in the notebook
+numpy==2.3.2
+pandas==2.3.2
+scikit-learn==1.7.2
+matplotlib==3.10.3
+
+# Jupyter environment for running the notebook
+notebook==7.4.5
+ipykernel==6.30.1
