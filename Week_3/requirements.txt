@@ -1,0 +1,3 @@
+# Local lab environment: train, serve, and load-test (tested with Python 3.12)
+-r requirements-serve.txt
+requests==2.33.1

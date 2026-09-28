@@ -1,0 +1,17 @@
+# Generated model artifacts
+models/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Local environments and configuration
+.env
+.venv/
+venv/
+env/
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

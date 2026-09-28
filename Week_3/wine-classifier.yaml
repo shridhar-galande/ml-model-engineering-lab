@@ -1,0 +1,43 @@
+# Two Deployments (stable v1, canary v2) behind ONE Service.
+# The Service selects only on "app", so traffic spreads across all pods,
+# roughly in proportion to replica counts (9 : 1  ->  about 10% to v2).
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: wine-classifier-v1 }
+spec:
+  replicas: 9
+  selector: { matchLabels: { app: wine-classifier, version: v1 } }
+  template:
+    metadata: { labels: { app: wine-classifier, version: v1 } }
+    spec:
+      containers:
+        - name: api
+          image: wine-classifier:v1
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 256Mi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: wine-classifier-v2 }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: wine-classifier, version: v2 } }
+  template:
+    metadata: { labels: { app: wine-classifier, version: v2 } }
+    spec:
+      containers:
+        - name: api
+          image: wine-classifier:v2
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 256Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: wine-classifier }
+spec:
+  selector: { app: wine-classifier }
+  ports: [{ port: 80, targetPort: 8000 }]
