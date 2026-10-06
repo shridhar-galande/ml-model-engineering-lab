@@ -115,6 +115,13 @@ def train(n_estimators: int = 100, max_depth: int = None):
         # ── ARTIFACT: log the model itself ─────────────────
         # MLflow saves the model in a versioned folder.
         # You can load it later with: mlflow.sklearn.load_model(...)
+        deployment_model_path = os.path.join("models", f"mlflow_model_{run_id}")
+        os.makedirs("models", exist_ok=True)
+        mlflow.sklearn.save_model(
+            model,
+            path=deployment_model_path,
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
+        )
         mlflow.sklearn.log_model(
             model,
             artifact_path="model",
@@ -123,7 +130,6 @@ def train(n_estimators: int = 100, max_depth: int = None):
 
         # ── ARTIFACT: save metrics to a JSON file too ──────
         # This is what evaluate.py will read to compare runs.
-        os.makedirs("models", exist_ok=True)
         metrics_path = "models/latest_metrics.json"
         with open(metrics_path, "w") as f:
             json.dump({
@@ -131,6 +137,7 @@ def train(n_estimators: int = 100, max_depth: int = None):
                 "accuracy":     accuracy,
                 "n_estimators": n_estimators,
                 "max_depth":    str(max_depth),
+                "model_path":   deployment_model_path,
             }, f, indent=2)
         mlflow.log_artifact(metrics_path)
 

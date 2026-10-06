@@ -106,7 +106,6 @@ You'll see every run with its parameters, metrics, and saved model.
 For tracking, model logging, registry, serving, and troubleshooting commands,
 see the [MLflow Cheat Sheet](./MLFLOW_CHEATSHEET.md).
 
-
 ---
 
 ## Project Structure
@@ -199,3 +198,87 @@ mlflow models serve
 ```bash
 docker build .
 ```
+
+---
+
+## Pull, Run, and Test the Model Image Locally
+
+The GitHub Actions workflow builds the MLflow serving image after the data and
+model quality checks pass, then publishes it to GitHub Container Registry
+(GHCR) for pushes to `main`. Pull requests run CI but do not publish images.
+The image is tagged `latest` and with the commit SHA. First, make sure Docker
+Desktop is installed and running, and that the GitHub Actions image-publish job
+has completed successfully.
+
+Open PowerShell and set the image name:
+
+```powershell
+$image = "ghcr.io/galandeshridhar0-a11y/mlops-ci-pipeline:latest"
+```
+
+If the GHCR package is public, pull the image directly:
+
+```powershell
+docker pull $image
+```
+
+If the package is private, first authenticate with a GitHub personal access
+token that has `read:packages` permission, then pull it:
+
+```powershell
+$env:CR_PAT = "<your-read-packages-token>"
+$env:CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+Remove-Item Env:CR_PAT
+docker pull $image
+```
+
+Start the model server in this PowerShell terminal:
+
+```powershell
+docker run --rm --name iris-mlflow -p 5001:5000 ghcr.io/shridhar-galande/mlops-ci-pipeline:latest
+```
+
+Wait until the container reports that the MLflow server is listening. Keep
+this terminal open. In a **second** PowerShell terminal, send one Iris sample
+to the model:
+
+```powershell
+$body = '{"dataframe_split":{"columns":["sepal_length","sepal_width","petal_length","petal_width"],"data":[[5.1,3.5,1.4,0.2]]}}'
+
+$result = Invoke-RestMethod `
+    -Method Post `
+    -Uri http://127.0.0.1:5001/invocations `
+    -ContentType "application/json" `
+    -Body $body
+
+$result | ConvertTo-Json -Depth 5
+```
+
+### Test with `curl` (macOS, Linux, or Git Bash)
+
+With the model server still running, open another terminal and run:
+
+```bash
+curl --request POST \
+  --url http://127.0.0.1:5001/invocations \
+  --header "Content-Type: application/json" \
+  --data '{
+    "dataframe_split": {
+      "columns": ["sepal_length", "sepal_width", "petal_length", "petal_width"],
+      "data": [[5.1, 3.5, 1.4, 0.2]]
+    }
+  }'
+```
+
+The response should look like this:
+
+```json
+{"predictions":["setosa"]}
+```
+
+Stop the local server with **Ctrl+C** in the first terminal. The `--rm` option
+removes the stopped container; the pulled image remains available locally.
+
+No GitHub deployment environment or hosted server is required for this local
+run. A GitHub Environment is only needed later if you want deployment approvals,
+environment-specific secrets, or an automated deployment target.

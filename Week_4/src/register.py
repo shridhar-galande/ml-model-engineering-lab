@@ -39,8 +39,8 @@ def register():
 
     # ── Load latest metrics ────────────────────────────────
     if not os.path.exists(LATEST_METRICS_PATH):
-        print(f"\n❌  No trained model metrics found.")
-        print("    Run train.py → evaluate.py → register.py in order.")
+        print("\nNo trained model metrics found.")
+        print("    Run train.py -> evaluate.py -> register.py in order.")
         return
 
     with open(LATEST_METRICS_PATH) as f:
@@ -48,7 +48,7 @@ def register():
 
     run_id   = metrics["run_id"]
     accuracy = metrics["accuracy"]
-    print(f"\n📦  Registering model from run: {run_id[:8]}...")
+    print(f"\nRegistering model from run: {run_id[:8]}...")
 
     # ── Load model from MLflow ─────────────────────────────
     # We pull the model back out of the MLflow run we logged it to.
@@ -65,7 +65,7 @@ def register():
     os.makedirs(MODEL_DIR, exist_ok=True)
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
-    print(f"    Saved model artifact → {model_path}")
+    print(f"    Saved model artifact -> {model_path}")
 
     # ── Write a model card ─────────────────────────────────
     # A "model card" is documentation about a model:
@@ -88,19 +88,19 @@ def register():
     card_path = os.path.join(MODEL_DIR, f"model_card_{timestamp}.json")
     with open(card_path, "w") as f:
         json.dump(model_card, f, indent=2)
-    print(f"    Saved model card   → {card_path}")
+    print(f"    Saved model card   -> {card_path}")
 
     # ── Promote to champion ────────────────────────────────
     # "Champion" = the model we'll compare future runs against.
     # We copy the current metrics into champion_metrics.json.
     with open(CHAMPION_METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2)
-    print(f"    Promoted to champion → {CHAMPION_METRICS_PATH}")
+    print(f"    Promoted to champion -> {CHAMPION_METRICS_PATH}")
 
     # ── Quick smoke-test ───────────────────────────────────
     # Before declaring success, predict on one sample to make
     # sure the saved model loads and runs correctly.
-    print(f"\n🔍  Smoke test (predict on 1 sample) ...")
+    print("\nSmoke test (predict on 1 sample) ...")
     sample = pd.DataFrame([[5.1, 3.5, 1.4, 0.2]],
                           columns=["sepal_length", "sepal_width",
                                    "petal_length", "petal_width"])
@@ -108,7 +108,7 @@ def register():
     print(f"    Input : [5.1, 3.5, 1.4, 0.2]")
     print(f"    Output: {prediction}  (expected: setosa)")
 
-    print(f"\n✅  Model registered successfully!")
+    print("\nModel registered successfully!")
     print(f"    Artifact : {model_path}")
     print(f"    Model card: {card_path}")
     print(f"    Accuracy : {accuracy:.4f}  ({accuracy*100:.1f}%)\n")

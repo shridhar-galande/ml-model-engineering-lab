@@ -41,10 +41,10 @@ def check(condition: bool, message: str):
     If condition is False we print the message and exit.
     """
     if condition:
-        print(f"  ✅  PASS  — {message}")
+        print(f"  PASS  - {message}")
     else:
-        print(f"  ❌  FAIL  — {message}")
-        print("\n⛔  Pipeline stopped. Fix the data before training.")
+        print(f"  FAIL  - {message}")
+        print("\nPipeline stopped. Fix the data before training.")
         sys.exit(1)   # exit code 1 = failure (CI/CD sees this)
 
 
@@ -66,10 +66,10 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
 
     # ── Load ───────────────────────────────────────────────
     df = pd.read_csv(path)
-    print(f"\n📂 Loaded {len(df)} rows, {len(df.columns)} columns\n")
+    print(f"\nLoaded {len(df)} rows, {len(df.columns)} columns\n")
 
     # ── CHECK 1: Column names ──────────────────────────────
-    print("[ Check 1 ] Schema — correct column names?")
+    print("[ Check 1 ] Schema - correct column names?")
     actual_cols = list(df.columns)
     check(
         actual_cols == EXPECTED_COLUMNS,
@@ -77,7 +77,7 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
     )
 
     # ── CHECK 2: No missing values ──────────────────────────
-    print("\n[ Check 2 ] Completeness — any missing values?")
+    print("\n[ Check 2 ] Completeness - any missing values?")
     null_counts = df.isnull().sum()
     total_nulls = null_counts.sum()
 
@@ -87,7 +87,7 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
             if df[col].isnull().any():
                 median_val = df[col].median()
                 df[col] = df[col].fillna(median_val)
-                print(f"  🔧  Auto-fixed nulls in '{col}' → filled with median ({median_val:.2f})")
+                print(f"  Auto-fixed nulls in '{col}' -> filled with median ({median_val:.2f})")
         total_nulls = df.isnull().sum().sum()
 
     check(
@@ -96,14 +96,14 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
     )
 
     # ── CHECK 3: Value ranges ──────────────────────────────
-    print("\n[ Check 3 ] Validity — numeric columns in expected range?")
+    print("\n[ Check 3 ] Validity - numeric columns in expected range?")
     for col, (lo, hi) in COLUMN_RANGES.items():
         out_of_range = df[(df[col] < lo) | (df[col] > hi)]
 
         if fix and len(out_of_range) > 0:
             # Clip to valid range
             df[col] = df[col].clip(lower=lo, upper=hi)
-            print(f"  🔧  Auto-fixed {len(out_of_range)} out-of-range values in '{col}' → clipped to [{lo}, {hi}]")
+            print(f"  Auto-fixed {len(out_of_range)} out-of-range values in '{col}' -> clipped to [{lo}, {hi}]")
             out_of_range = df[(df[col] < lo) | (df[col] > hi)]  # recheck
 
         check(
@@ -112,7 +112,7 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
         )
 
     # ── CHECK 4: Valid class labels ────────────────────────
-    print("\n[ Check 4 ] Labels — only known species values?")
+    print("\n[ Check 4 ] Labels - only known species values?")
     actual_species = set(df["species"].unique())
     unexpected = actual_species - EXPECTED_SPECIES
 
@@ -120,7 +120,7 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
         # Drop rows with unknown labels
         bad_rows = df[~df["species"].isin(EXPECTED_SPECIES)]
         df = df[df["species"].isin(EXPECTED_SPECIES)]
-        print(f"  🔧  Removed {len(bad_rows)} rows with unknown label(s): {unexpected}")
+        print(f"  Removed {len(bad_rows)} rows with unknown label(s): {unexpected}")
         unexpected = set()
 
     check(
@@ -129,17 +129,17 @@ def run_checks(path: str = DATA_PATH, fix: bool = False):
     )
 
     # ── CHECK 5: Row count sanity ──────────────────────────
-    print("\n[ Check 5 ] Volume — at least 50 rows?")
-    check(len(df) >= 50, f"Row count = {len(df)} (need ≥ 50)")
+    print("\n[ Check 5 ] Volume - at least 50 rows?")
+    check(len(df) >= 50, f"Row count = {len(df)} (need >= 50)")
 
     # ── SAVE CLEAN VERSION ──────────────────────────────────
     if fix:
         clean_path = path.replace(".csv", "_clean.csv")
         df.to_csv(clean_path, index=False)
-        print(f"\n💾  Saved clean data → {clean_path}")
+        print(f"\nSaved clean data -> {clean_path}")
         return clean_path
 
-    print("\n✅  All data quality checks passed!")
+    print("\nAll data quality checks passed!")
     return path
 
 

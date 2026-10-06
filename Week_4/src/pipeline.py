@@ -41,67 +41,67 @@ def run_pipeline(n_estimators: int = 100, max_depth: int = None):
     start_time = time.time()
 
     print("\n" + "=" * 60)
-    print("  🚀  MLOPS PIPELINE STARTING")
+    print("  MLOPS PIPELINE STARTING")
     print("=" * 60)
     print(f"  Config: n_estimators={n_estimators}, max_depth={max_depth}")
     print("=" * 60 + "\n")
 
     # ── STEP 1: Data quality gate ──────────────────────────
-    print("\n📋  STEP 1/4  —  Data Quality Check\n")
+    print("\nSTEP 1/4  -  Data Quality Check\n")
     t0 = time.time()
     try:
         # fix=True so pipeline auto-cleans data and continues
         run_checks(fix=True)
-        print(f"   ⏱  Done in {time.time()-t0:.1f}s")
+        print(f"   Done in {time.time()-t0:.1f}s")
     except SystemExit:
-        print("\n⛔  PIPELINE ABORTED at Step 1 (data quality)")
+        print("\nPIPELINE ABORTED at Step 1 (data quality)")
         sys.exit(1)
 
     # ── STEP 2: Train ──────────────────────────────────────
-    print("\n\n🌲  STEP 2/4  —  Training\n")
+    print("\n\nSTEP 2/4  -  Training\n")
     t0 = time.time()
     try:
         accuracy, run_id = train(
             n_estimators=n_estimators,
             max_depth=max_depth
         )
-        print(f"   ⏱  Done in {time.time()-t0:.1f}s")
+        print(f"   Done in {time.time()-t0:.1f}s")
     except Exception as e:
-        print(f"\n⛔  PIPELINE ABORTED at Step 2 (training): {e}")
+        print(f"\nPIPELINE ABORTED at Step 2 (training): {e}")
         sys.exit(1)
 
     # ── STEP 3: Evaluate ───────────────────────────────────
-    print("\n\n📊  STEP 3/4  —  Evaluation Gate\n")
+    print("\n\nSTEP 3/4  -  Evaluation Gate\n")
     t0 = time.time()
     try:
         evaluate()
-        print(f"   ⏱  Done in {time.time()-t0:.1f}s")
+        print(f"   Done in {time.time()-t0:.1f}s")
     except SystemExit:
-        print("\n⛔  PIPELINE ABORTED at Step 3 (model evaluation)")
+        print("\nPIPELINE ABORTED at Step 3 (model evaluation)")
         print("    The model did not meet quality standards.")
         print("    No model was registered or deployed.")
         sys.exit(1)
 
     # ── STEP 4: Register ───────────────────────────────────
-    print("\n\n📦  STEP 4/4  —  Model Registration\n")
+    print("\n\nSTEP 4/4  -  Model Registration\n")
     t0 = time.time()
     try:
         model_path = register()
-        print(f"   ⏱  Done in {time.time()-t0:.1f}s")
+        print(f"   Done in {time.time()-t0:.1f}s")
     except Exception as e:
-        print(f"\n⛔  PIPELINE ABORTED at Step 4 (registration): {e}")
+        print(f"\nPIPELINE ABORTED at Step 4 (registration): {e}")
         sys.exit(1)
 
     # ── Done ───────────────────────────────────────────────
     elapsed = time.time() - start_time
     print("\n" + "=" * 60)
-    print("  ✅  PIPELINE COMPLETE")
+    print("  PIPELINE COMPLETE")
     print("=" * 60)
     print(f"  Total time   : {elapsed:.1f}s")
     print(f"  Accuracy     : {accuracy:.4f}  ({accuracy*100:.1f}%)")
     print(f"  MLflow run   : {run_id[:8]}...")
     print(f"  Model saved  : {model_path}")
-    print(f"\n  👉  View all runs:  mlflow ui  →  http://localhost:5000")
+    print("\n  View all runs:  mlflow ui  ->  http://localhost:5000")
     print("=" * 60 + "\n")
 
 

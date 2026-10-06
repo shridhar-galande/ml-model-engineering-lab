@@ -4,11 +4,16 @@ on:
   push:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   ci:
     name: Continuous Integration
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
     strategy:
       matrix:
         python-version: [3.11]
@@ -48,11 +53,11 @@ jobs:
         run: |
           echo "=== models directory ==="
           ls -R models || true
-          echo "=== mlruns directory ==="
-          ls -R mlruns || true
+          echo "=== MLflow artifacts directory ==="
+          ls -R mlartifacts || true
           echo "\n=== upload artifact paths ==="
           echo "models artifact path: models/**"
-          echo "mlruns artifact path: mlruns/**"
+          echo "MLflow artifacts path: mlartifacts/**"
 
       - name: Upload models artifact
         if: always()
@@ -61,9 +66,68 @@ jobs:
           name: models
           path: models/**
 
-      - name: Upload mlruns artifact
+      - name: Upload MLflow artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mlruns
-          path: mlruns/**
+          name: mlflow-artifacts
+          path: mlartifacts/**
+          if-no-files-found: ignore
+
+  publish:
+    name: Build and publish serving image
+    needs: ci
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download trained model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: models
+
+      - name: Get deployment model path
+        id: model
+        run: |
+          model_path="$(python -c "import json; print(json.load(open('models/latest_metrics.json'))['model_path'])")"
+          test -f "$model_path/MLmodel"
+          echo "path=$model_path" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate image tags and labels
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+      - name: Build and push serving image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            MODEL_PATH=${{ steps.model.outputs.path }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}

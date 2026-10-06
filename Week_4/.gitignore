@@ -18,6 +18,7 @@ venv/
 *.pyc
 .DS_Store
 Thumbs.db
+.pytest_cache/
 
 # PyCharm
 .idea/

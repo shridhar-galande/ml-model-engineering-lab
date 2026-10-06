@@ -32,10 +32,10 @@ ACCURACY_THRESHOLD = 0.88
 def gate(condition: bool, message: str):
     """Print PASS or FAIL. Exit on failure."""
     if condition:
-        print(f"  ✅  PASS  — {message}")
+        print(f"  PASS  - {message}")
     else:
-        print(f"  ❌  FAIL  — {message}")
-        print("\n⛔  Model rejected. It will NOT be registered.")
+        print(f"  FAIL  - {message}")
+        print("\nModel rejected. It will NOT be registered.")
         sys.exit(1)
 
 
@@ -56,7 +56,7 @@ def evaluate():
     # ── Load latest metrics ────────────────────────────────
     latest = load_metrics(LATEST_METRICS_PATH)
     if latest is None:
-        print(f"\n❌  No trained model found at {LATEST_METRICS_PATH}")
+        print(f"\nNo trained model found at {LATEST_METRICS_PATH}")
         print("    Run  python src/train.py  first.")
         sys.exit(1)
 
@@ -64,7 +64,7 @@ def evaluate():
     run_id       = latest["run_id"]
     n_estimators = latest["n_estimators"]
 
-    print(f"\n📊  New model  (run: {run_id[:8]}...)")
+    print(f"\nNew model  (run: {run_id[:8]}...)")
     print(f"    Accuracy     : {accuracy:.4f}  ({accuracy*100:.1f}%)")
     print(f"    n_estimators : {n_estimators}")
 
@@ -72,7 +72,7 @@ def evaluate():
     print(f"\n[ Check 1 ] Does model meet minimum accuracy threshold ({ACCURACY_THRESHOLD})?")
     gate(
         accuracy >= ACCURACY_THRESHOLD,
-        f"Accuracy {accuracy:.4f} ≥ threshold {ACCURACY_THRESHOLD}"
+        f"Accuracy {accuracy:.4f} >= threshold {ACCURACY_THRESHOLD}"
     )
 
     # ── CHECK 2: Champion/challenger ───────────────────────
@@ -82,7 +82,7 @@ def evaluate():
 
     if champion is None:
         # No champion yet — first model automatically wins
-        print(f"  ✅  PASS  — No champion exists yet. First model wins automatically.")
+        print("  PASS  - No champion exists yet. First model wins automatically.")
     else:
         champ_acc = champion["accuracy"]
         champ_run = champion["run_id"]
@@ -90,11 +90,11 @@ def evaluate():
 
         gate(
             accuracy >= champ_acc,
-            f"New model ({accuracy:.4f}) ≥ champion ({champ_acc:.4f})"
+            f"New model ({accuracy:.4f}) >= champion ({champ_acc:.4f})"
         )
 
     # ── All checks passed ──────────────────────────────────
-    print(f"\n✅  Model approved! Ready to register.")
+    print("\nModel approved! Ready to register.")
     return True
 
 
