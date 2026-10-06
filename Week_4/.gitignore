@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv311/
+venv/
+.env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and OS files
+*.log
+*.pot
+*.pyc
+.DS_Store
+Thumbs.db
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# MLflow artifacts and temporary files
+mlruns/
+models/
+mlflow.db
+
+# Ignore local data files if you prefer
+# data/*.csv
