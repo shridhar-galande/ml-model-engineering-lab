@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: Model monitoring
+    orgId: 1
+    folder: Model monitoring
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

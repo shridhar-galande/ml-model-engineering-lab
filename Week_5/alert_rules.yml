@@ -1,0 +1,32 @@
+groups:
+  - name: model-monitoring
+    rules:
+      - alert: ModelRequestErrorRateHigh
+        expr: |
+          sum(rate(model_requests_total{outcome="error"}[5m]))
+          / clamp_min(sum(rate(model_requests_total[5m])), 1e-9) > 0.02
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Model API request error rate is above 2%
+
+      - alert: ModelP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(model_request_duration_seconds_bucket[5m]))
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Model API p95 latency is above 500 ms
+
+      - alert: ModelFeatureDriftHigh
+        expr: model_feature_psi > 0.2
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Feature {{ $labels.feature }} PSI is above 0.2

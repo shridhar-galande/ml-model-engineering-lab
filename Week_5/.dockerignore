@@ -1,0 +1,34 @@
+# Repository and local development files
+.git
+.github
+.venv
+venv
+venv311
+__pycache__
+**/__pycache__
+*.py[cod]
+*.png
+*.tar
+*.tar.gz
+.env
+.env.*
+.pytest_cache
+.ipynb_checkpoints
+notebooks
+tests
+
+# Training inputs and artifacts are not needed in the serving image.
+data
+models
+mlflow.db
+mlruns
+mlartifacts
+
+# The image only needs the staged MLflow model and API source.
+README.md
+MLFLOW_CHEATSHEET.md
+requirements.txt
+docker-compose.yml
+prometheus.yml
+alert_rules.yml
+grafana

@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 env/
+venv311/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -15,13 +16,32 @@ env/
 *.jpg
 *.jpeg
 *.parquet
+*.tar
+*.tar.gz
 
 # Local environment and secrets
 .env
 .env.*
 !.env.example
 
+# Logs and caches
+*.log
+*.pot
+.pytest_cache/
+.ruff_cache/
+
 # OS and editor files
 .DS_Store
 Thumbs.db
+desktop.ini
 .vscode/
+.idea/
+
+# MLflow artifacts and temporary files
+mlruns/
+mlartifacts/
+models/
+_docker_model/
+notebooks/generated/
+notebooks/notebooks/generated/
+mlflow.db

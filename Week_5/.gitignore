@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv311/
+venv/
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and OS files
+*.log
+*.pot
+*.pyc
+.DS_Store
+Thumbs.db
+.pytest_cache/
+.ruff_cache/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# MLflow artifacts and temporary files
+mlruns/
+mlartifacts/
+models/
+_docker_model/
+notebooks/generated/
+notebooks/notebooks/generated/
+mlflow.db
+
+# Generated images and local container artifacts
+*.png
+*.tar
+*.tar.gz
+
+# OS files
+desktop.ini

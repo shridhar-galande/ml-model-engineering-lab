@@ -1,0 +1,42 @@
+services:
+  model-api:
+    image: ${MODEL_IMAGE:?Set MODEL_IMAGE to the published model image}
+    container_name: monitored-model
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: model-prometheus
+    depends_on:
+      model-api:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: model-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro

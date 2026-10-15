@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: Continuous Integration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m pytest tests/ -q
+
+      - name: Run data quality gate
+        run: python src/data_check.py --fix
+
+      - name: Run full ML pipeline
+        run: python src/pipeline.py --n-estimators 10 --max-depth 2
+
+      - name: Stage model for container build
+        id: model
+        run: |
+          model_path="$(python -c "import json; print(json.load(open('models/latest_metrics.json'))['model_path'])")"
+          test -f "$model_path/MLmodel"
+          mkdir -p _docker_model
+          cp -R "$model_path/." _docker_model/
+          echo "path=_docker_model" >> "$GITHUB_OUTPUT"
+
+      - name: Build monitored serving image
+        run: docker build --build-arg MODEL_PATH=${{ steps.model.outputs.path }} --tag iris-monitoring:test .
+
+      - name: Run monitored model, Prometheus, and Grafana
+        run: |
+          set -euo pipefail
+          export MODEL_IMAGE=iris-monitoring:test
+          cleanup() { docker compose logs || true; docker compose down --remove-orphans || true; }
+          trap cleanup EXIT
+          docker compose up --detach --wait --wait-timeout 120
+          curl --fail http://127.0.0.1:8000/healthz
+          python tests/smoke_test_container.py
+          python tests/smoke_test_monitoring_stack.py
+
+      - name: Summarize tested image
+        run: |
+          image_id="$(docker image inspect iris-monitoring:test --format '{{.Id}}')"
+          image_size="$(docker image inspect iris-monitoring:test --format '{{.Size}}' | numfmt --to=iec)"
+          {
+            echo "## Docker image build"
+            echo ""
+            echo "- **Build tag:** \`iris-monitoring:test\` (local to this runner)"
+            echo "- **Image ID:** \`$image_id\`"
+            echo "- **Image size:** $image_size"
+            echo "- **Status:** container and monitoring-stack smoke tests passed"
+            echo ""
+            echo "On a push or manual run from \`main\`, the publish job pushes this tested image to GHCR."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save tested image for release
+        run: docker save iris-monitoring:test | gzip -1 > monitored-model-image.tar.gz
+
+      - name: Upload tested image
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitored-model-image
+          path: monitored-model-image.tar.gz
+          compression-level: 0
+          retention-days: 3
+
+      - name: List generated artifacts
+        run: |
+          echo "=== MLflow artifacts directory ==="
+          ls -R mlartifacts || true
+          echo "\n=== upload artifact paths ==="
+          echo "MLflow artifacts path: mlartifacts/**"
+
+      - name: Upload MLflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-artifacts
+          path: mlartifacts/**
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish tested serving image
+    needs: ci
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download tested image
+        uses: actions/download-artifact@v4
+        with:
+          name: monitored-model-image
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and publish the already-tested image
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+        run: |
+          set -euo pipefail
+          gzip -dc monitored-model-image.tar.gz | docker load
+          short_sha="${GITHUB_SHA:0:7}"
+          docker tag iris-monitoring:test "$IMAGE_NAME:latest"
+          docker tag iris-monitoring:test "$IMAGE_NAME:sha-$short_sha"
+          docker push "$IMAGE_NAME:latest"
+          docker push "$IMAGE_NAME:sha-$short_sha"
+          {
+            echo "## Docker image published"
+            echo ""
+            echo "- **Latest:** \`$IMAGE_NAME:latest\`"
+            echo "- **This commit:** \`$IMAGE_NAME:sha-$short_sha\`"
+            echo "- **Package page:** [View package](https://github.com/$GITHUB_REPOSITORY/pkgs/container/${GITHUB_REPOSITORY#*/})"
+            echo ""
+            echo "Pull the tested image with:"
+            echo ""
+            echo '```powershell'
+            echo "docker pull $IMAGE_NAME:sha-$short_sha"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
