@@ -7,6 +7,7 @@ __pycache__/
 /.anaconda-project/
 /anaconda-project.yml
 /anaconda-project-lock.yml
+/anaconda_projects/
 
 # Virtual environments
 .venv/
