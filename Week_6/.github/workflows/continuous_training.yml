@@ -1,0 +1,602 @@
+name: Iris — Continuous Training Pipeline
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggers:
+#   push to main   → run monitoring + trigger check (retrain if needed)
+#   schedule       → weekly safety-net retrain on Sunday midnight UTC
+#   manual         → workflow_dispatch lets you force a full pipeline run
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "src/**/*.py"
+      - "config.yaml"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "compose.image.yaml"
+      - "monitoring/**"
+      - ".github/workflows/**"
+
+  schedule:
+    - cron: "0 0 * * 0"    # Every Sunday at 00:00 UTC (time-based safety net)
+
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: "Force retraining regardless of triggers"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      dry_run:
+        description: "Dry run — evaluate but do NOT promote"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+env:
+  PYTHON_VERSION: "3.11"
+  PYTHONPATH: src
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1 — Lint & unit tests (runs on every push, fast gate)
+  # ───────────────────────────────────────────────────────────────────────────
+  lint-and-test:
+    name: "Lint & Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt flake8 pytest
+
+      - name: Verify MLflow database dependency
+        run: |
+          python -c "from sqlalchemy.pool import FallbackAsyncAdaptedQueuePool; import mlflow.store.db.utils; print('MLflow SQLAlchemy pool import passed')"
+
+      - name: Lint (flake8)
+        run: |
+          flake8 . --max-line-length=100 \
+                   --exclude=.git,__pycache__ \
+                   --per-file-ignores="__init__.py:F401"
+
+      - name: Unit tests
+        run: pytest src/tests/ -v --tb=short
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2 — Build and publish a pullable application image to GHCR
+  # ───────────────────────────────────────────────────────────────────────────
+  build-and-publish-image:
+    name: "Build & Publish Docker Image"
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      run_tag: ${{ steps.image.outputs.run_tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set image reference
+        id: image
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "package_name=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
+          echo "run_tag=run-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ steps.image.outputs.run_tag }}
+            ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', steps.image.outputs.name) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Add image pull instructions to run summary
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          PACKAGE_NAME: ${{ steps.image.outputs.package_name }}
+          RUN_TAG: ${{ steps.image.outputs.run_tag }}
+        run: |
+          {
+            echo "## Docker image published"
+            echo
+            echo "Image package: [\`${IMAGE_NAME}\`](https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${PACKAGE_NAME})"
+            echo
+            echo '```bash'
+            echo "docker pull ${IMAGE_NAME}:${RUN_TAG}"
+            echo '```'
+            echo
+            echo "Commit image: \`${IMAGE_NAME}:sha-${GITHUB_SHA}\`"
+            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              echo "Latest image: \`${IMAGE_NAME}:latest\`"
+            fi
+            echo
+            echo "If the package is private, first authenticate with GitHub Container Registry:"
+            echo '```bash'
+            echo "docker login ghcr.io -u YOUR_GITHUB_USERNAME"
+            echo '```'
+            echo "Use a GitHub personal access token with \`read:packages\` as the password."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3 — Generate datasets
+  # ───────────────────────────────────────────────────────────────────────────
+  generate-data:
+    name: "Generate Datasets"
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    outputs:
+      data_hash: ${{ steps.hash.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate all datasets
+        run: python src/data_generator.py
+
+      - name: Hash data files (for cache key)
+        id: hash
+        run: |
+          if [ -f data/*.csv ]; then
+            hash=$(md5sum data/*.csv 2>/dev/null | md5sum | cut -d' ' -f1)
+          else
+            hash="$(date +%s)"
+          fi
+          [ -z "$hash" ] && hash="fallback-$(date +%s)"
+          echo "hash=$hash" >> $GITHUB_OUTPUT
+          echo "Artifact hash: $hash"
+
+      - name: Upload datasets as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: datasets-${{ github.run_id }}
+          path: data/
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4 — Bootstrap a production model before inference monitoring
+  # ───────────────────────────────────────────────────────────────────────────
+  initialize-model:
+    name: "Build & Evaluate Initial Model"
+    runs-on: ubuntu-latest
+    needs: generate-data
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore model and MLflow state
+        uses: actions/cache@v4
+        with:
+          path: |
+            models/current_model.pkl
+            mlflow.db
+            mlruns/
+            logs/retrain_history.json
+          key: model-state-${{ github.ref }}-state-bootstrap-${{ github.run_id }}
+          restore-keys: |
+            model-state-${{ github.ref }}-state-
+            model-state-${{ github.ref }}-promoted-
+            model-state-${{ github.ref }}-monitor-
+            model-state-${{ github.ref }}-bootstrap-
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets-${{ github.run_id }}
+          path: data/
+
+      - name: Train and evaluate initial model when no Production model exists
+        run: |
+          mkdir -p models logs
+          if [ ! -f models/current_model.pkl ]; then
+            echo "No cached Production model; building and evaluating the initial model."
+            python src/train.py
+            python src/evaluate.py --promote
+          else
+            echo "Restored the existing Production model; skip initial training."
+          fi
+          test -f models/current_model.pkl
+
+      - name: Upload Production model and MLflow state for inference
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-state-${{ github.run_id }}
+          path: |
+            models/current_model.pkl
+            mlflow.db
+            mlruns/
+            logs/retrain_history.json
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 5 — Inference monitoring (evaluates production data against Production model)
+  # ───────────────────────────────────────────────────────────────────────────
+  monitor:
+    name: "Monitor — Drift & Performance"
+    runs-on: ubuntu-latest
+    needs: [generate-data, initialize-model]
+    outputs:
+      should_retrain: ${{ steps.check.outputs.should_retrain }}
+      trigger_reasons: ${{ steps.check.outputs.trigger_reasons }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets-${{ github.run_id }}
+          path: data/
+          if-no-files-found: warn
+
+      - name: Restore Production model and MLflow state
+        uses: actions/download-artifact@v4
+        with:
+          name: model-state-${{ github.run_id }}
+          path: .
+
+      - name: Ensure datasets exist
+        run: |
+          if [ ! -f data/reference.csv ] || [ ! -f data/production.csv ]; then
+            echo "Dataset artifact missing or incomplete; regenerating data..."
+            python src/data_generator.py
+          fi
+
+      - name: Run inference-time monitoring against Production model
+        run: python src/monitor.py
+
+      - name: Run trigger evaluation
+        id: check
+        run: |
+          python -c "
+          import json, sys
+          from retrain_trigger import run_trigger_evaluation
+          result = run_trigger_evaluation(dry_run=True)
+          force  = '${{ github.event.inputs.force_retrain }}' == 'true'
+          retrain = result['retrain'] or force
+          reasons = ','.join(result['triggered_by'])
+          print(f'should_retrain={str(retrain).lower()}')
+          print(f'trigger_reasons={reasons}')
+          with open('$GITHUB_OUTPUT', 'a') as f:
+              f.write(f'should_retrain={str(retrain).lower()}\n')
+              f.write(f'trigger_reasons={reasons}\n')
+          "
+
+      - name: Upload monitoring logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 14
+
+      - name: Upload drift report
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report-${{ github.run_id }}
+          path: reports/drift_report.html
+          retention-days: 14
+        if: always()
+
+      - name: Save updated MLflow state for retraining
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-state-${{ github.run_id }}
+          path: |
+            models/current_model.pkl
+            mlflow.db
+            mlruns/
+            logs/
+          retention-days: 7
+
+      - name: Cache inference monitoring state for the next run
+        uses: actions/cache@v4
+        with:
+          path: |
+            models/current_model.pkl
+            mlflow.db
+            mlruns/
+            logs/retrain_history.json
+          key: model-state-${{ github.ref }}-state-monitor-${{ github.run_id }}
+
+      - name: Comment trigger decision on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const retrain = '${{ steps.check.outputs.should_retrain }}';
+            const reasons = '${{ steps.check.outputs.trigger_reasons }}' || 'none';
+            const icon    = retrain === 'true' ? '🚨' : '✅';
+            const body    = `## ${icon} Continuous Training Trigger Check\n` +
+                            `**Should retrain:** \`${retrain}\`\n` +
+                            `**Reasons:** ${reasons}\n\n` +
+                            `[View drift report](../actions/runs/${{ github.run_id }})`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 6 — Retrain only when inference monitoring detects a trigger
+  # ───────────────────────────────────────────────────────────────────────────
+  retrain:
+    name: "Retrain Model"
+    runs-on: ubuntu-latest
+    needs: monitor
+    if: |
+      needs.monitor.outputs.should_retrain == 'true' ||
+      github.event.inputs.force_retrain == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets-${{ github.run_id }}
+          path: data/
+          if-no-files-found: warn
+
+      - name: Restore Production model and inference MLflow state
+        uses: actions/download-artifact@v4
+        with:
+          name: monitor-state-${{ github.run_id }}
+          path: .
+
+      - name: Ensure datasets exist
+        run: |
+          if [ ! -f data/reference.csv ] || [ ! -f data/production.csv ]; then
+            echo "Dataset artifact missing or incomplete; regenerating data..."
+            python src/data_generator.py
+          fi
+
+      - name: Retrain on reference + production data
+        run: python src/train.py --combine
+
+      - name: Upload candidate model
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-model-${{ github.run_id }}
+          path: models/candidate_model.pkl
+          retention-days: 30
+
+      - name: Upload training logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-logs-${{ github.run_id }}
+          path: logs/metrics_history.json
+          retention-days: 30
+
+      - name: Upload trained candidate and MLflow state for evaluation
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-state-${{ github.run_id }}
+          path: |
+            models/current_model.pkl
+            models/candidate_model.pkl
+            mlflow.db
+            mlruns/
+            logs/
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 7 — Evaluate the retrained candidate against all five promotion gates
+  # ───────────────────────────────────────────────────────────────────────────
+  evaluate:
+    name: "Evaluate — All Gates"
+    runs-on: ubuntu-latest
+    needs: [generate-data, retrain]
+    outputs:
+      all_passed: ${{ steps.eval.outputs.all_passed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets-${{ github.run_id }}
+          path: data/
+          if-no-files-found: warn
+
+      - name: Restore Production model and candidate training state
+        uses: actions/download-artifact@v4
+        with:
+          name: training-state-${{ github.run_id }}
+          path: .
+
+      - name: Ensure datasets exist
+        run: |
+          if [ ! -f data/reference.csv ] || [ ! -f data/production.csv ]; then
+            echo "Dataset artifact missing or incomplete; regenerating data..."
+            python src/data_generator.py
+          fi
+
+      - name: Run all evaluation gates
+        id: eval
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from evaluate import run_evaluation
+
+          result = run_evaluation(auto_promote=False)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"all_passed={str(result['all_passed']).lower()}\n")
+          sys.exit(0 if result["all_passed"] else 1)
+          PY
+
+      - name: Upload evaluation logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-logs-${{ github.run_id }}
+          path: logs/evaluation_history.json
+          retention-days: 30
+        if: always()
+
+      - name: Save evaluation results and MLflow state for promotion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-state-${{ github.run_id }}
+          path: |
+            models/current_model.pkl
+            models/candidate_model.pkl
+            mlflow.db
+            mlruns/
+            logs/
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 8 — Promote (only if all gates passed AND not dry-run)
+  # ───────────────────────────────────────────────────────────────────────────
+  promote:
+    name: "Promote to Production"
+    runs-on: ubuntu-latest
+    needs: [evaluate, monitor]
+    if: |
+      needs.evaluate.outputs.all_passed == 'true' &&
+      github.event.inputs.dry_run != 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore evaluated candidate and MLflow registry
+        uses: actions/download-artifact@v4
+        with:
+          name: evaluation-state-${{ github.run_id }}
+          path: .
+
+      - name: Promote evaluated candidate in MLflow and update Production model
+        run: |
+          python - <<'PY'
+          import pickle
+          from evaluate import _setup_mlflow, promote_candidate, promote_in_registry
+
+          with open("models/candidate_model.pkl", "rb") as candidate_file:
+              candidate = pickle.load(candidate_file)
+          run_id = candidate["metrics"]["mlflow_run_id"]
+          version = promote_in_registry(_setup_mlflow(), run_id)
+          promote_candidate("models/candidate_model.pkl", "models/current_model.pkl")
+          print(f"Promoted MLflow model version {version} to Production.")
+          PY
+
+      - name: Cache promoted model and MLflow state for the next inference run
+        uses: actions/cache@v4
+        with:
+          path: |
+            models/current_model.pkl
+            mlflow.db
+            mlruns/
+            logs/retrain_history.json
+          key: model-state-${{ github.ref }}-state-promoted-${{ github.run_id }}
+
+      - name: Upload promoted model as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-model-${{ github.run_id }}
+          path: models/current_model.pkl
+          retention-days: 90
+
+      - name: Create GitHub release for promoted model
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `model-v${new Date().toISOString().slice(0,10)}-${context.runId}`;
+            const permissions = context.payload.repository?.permissions || {};
+            const canWrite = Boolean(permissions.contents || permissions.push || permissions.admin);
+            if (!canWrite) {
+              core.info(`Skipping release creation for ${tag}: token lacks repository write access.`);
+              return;
+            }
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                ref:   `refs/tags/${tag}`,
+                sha:   context.sha,
+              });
+              await github.rest.repos.createRelease({
+                owner:            context.repo.owner,
+                repo:             context.repo.repo,
+                tag_name:         tag,
+                name:             `Iris CT Model — ${tag}`,
+                body:             `Automated model promotion\nRun ID: ${context.runId}\nTriggered by: ${{ needs.monitor.outputs.trigger_reasons || 'scheduled' }}`,
+                draft:            false,
+                prerelease:       false,
+              });
+              core.info(`Created release ${tag}`);
+            } catch (error) {
+              core.warning(`Release creation skipped: ${error.message}`);
+            }

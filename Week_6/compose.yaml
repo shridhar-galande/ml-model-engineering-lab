@@ -1,0 +1,65 @@
+services:
+  mlops-demo:
+    image: ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:latest
+    pull_policy: always
+    environment:
+      DEMO_MODE: "true"
+      MLFLOW_TRACKING_URI: sqlite:////app/state/mlflow.db
+      PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-300}
+    volumes:
+      - demo_data:/app/data
+      - demo_models:/app/models
+      - demo_reports:/app/reports
+      - demo_logs:/app/logs
+      - mlflow_state:/app/state
+      - mlflow_artifacts:/app/mlruns
+    ports:
+      - "8000:8000"
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/metrics', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    depends_on:
+      mlops-demo:
+        condition: service_healthy
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+
+volumes:
+  demo_data:
+  demo_models:
+  demo_reports:
+  demo_logs:
+  mlflow_state:
+  mlflow_artifacts:
+  prometheus_data:
+  grafana_data:

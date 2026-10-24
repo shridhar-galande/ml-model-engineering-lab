@@ -1,0 +1,47 @@
+groups:
+  - name: iris-mlops-alerts
+    rules:
+      - alert: RetrainingTriggered
+        expr: mlops_retrain_trigger == 1
+        for: 10s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model retraining was triggered"
+          description: "The latest pipeline cycle decided to retrain. Check Grafana and the mlops-demo logs for the trigger reason and evaluation outcome."
+
+      - alert: FeatureDriftDetected
+        expr: mlops_feature_drift_psi > 0.2
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Feature drift exceeded the retraining threshold"
+          description: "PSI for feature {{ $labels.feature }} is {{ $value }}, above the configured 0.20 trigger threshold."
+
+      - alert: PipelineFailed
+        expr: mlops_pipeline_failed == 1
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "The latest MLOps pipeline cycle failed"
+          description: "Inspect the mlops-demo container logs for the pipeline error."
+
+      - alert: PipelineExporterDown
+        expr: up{job="iris-mlops-demo"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The MLOps metrics exporter is unreachable"
+          description: "Prometheus has been unable to scrape the mlops-demo metrics endpoint for at least one minute."
+
+      - alert: PipelineNoRecentSuccess
+        expr: time() - mlops_last_successful_pipeline_timestamp_seconds > 900 and mlops_last_successful_pipeline_timestamp_seconds > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful MLOps pipeline cycle recently"
+          description: "No successful pipeline cycle has completed in the last 15 minutes."

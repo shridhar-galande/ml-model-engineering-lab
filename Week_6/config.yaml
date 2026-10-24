@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# config.yaml  |  Iris Continuous Training — Central Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+project:
+  name: iris_continuous_training
+  version: "1.0.0"
+
+# ── MLflow ────────────────────────────────────────────────────────────────────
+mlflow:
+  tracking_uri: "sqlite:///mlflow.db"
+  experiment_name:    "iris_ct"
+  registered_model:   "iris_rf_model"    # name in the Model Registry
+  # Stages used in the Model Registry:
+  #   None → Staging → Production → Archived
+  staging_stage:   "Staging"
+  production_stage: "Production"
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+paths:
+  data_dir:          data/
+  reference_data:    data/reference.csv
+  production_data:   data/production.csv
+  golden_dataset:    data/golden.csv
+  model_dir:         models/
+  current_model:     models/current_model.pkl
+  candidate_model:   models/candidate_model.pkl
+  reports_dir:       reports/
+  drift_report:      reports/drift_report.html
+  metrics_log:       logs/metrics_history.json
+  retrain_log:       logs/retrain_history.json
+
+# ── Features ───────────────────────────────────────────────────────────────────
+features:
+  names:  [sepal_length, sepal_width, petal_length, petal_width]
+  target: species
+  classes: [0, 1, 2]
+
+# ── Model ──────────────────────────────────────────────────────────────────────
+model:
+  type: RandomForestClassifier
+  hyperparameters:
+    n_estimators: 100
+    max_depth: 5
+    min_samples_split: 4
+    random_state: 42
+  test_size: 0.20
+  random_state: 42
+
+# ── SLOs ──────────────────────────────────────────────────────────────────────
+slo:
+  accuracy:        { warning: 0.90, critical: 0.85 }
+  f1_macro:        { warning: 0.88, critical: 0.82 }
+  precision_macro: { warning: 0.88, critical: 0.82 }
+  recall_macro:    { warning: 0.88, critical: 0.82 }
+
+# ── Drift thresholds ───────────────────────────────────────────────────────────
+drift:
+  psi:               { watch: 0.10, trigger: 0.20 }
+  ks_pvalue:         { trigger: 0.05 }
+  prediction_shift:  { trigger: 0.15 }
+
+# ── Triggers ───────────────────────────────────────────────────────────────────
+triggers:
+  time_based:         { enabled: true,  interval_days: 7 }
+  performance_based:  { enabled: true,  min_samples_for_evaluation: 30 }
+  drift_based:
+    enabled: true
+    min_samples_for_drift: 50
+    features_to_monitor: [sepal_length, sepal_width, petal_length, petal_width]
+
+# ── Evaluation gates ───────────────────────────────────────────────────────────
+evaluation_gates:
+  must_beat_current:      true
+  beat_margin:            0.005
+  minimum_accuracy:       0.85
+  minimum_f1_macro:       0.82
+  golden_dataset_required: true
+  golden_accuracy:        1.0
+  per_class_min_recall:   0.80
+
+# ── Rollback ──────────────────────────────────────────────────────────────────
+rollback:
+  keep_n_models: 5
+  auto_rollback_on_accuracy_drop: true
+  auto_rollback_threshold: 0.05
+
+# ── Alerting ──────────────────────────────────────────────────────────────────
+alerting:
+  slack_webhook: ""
+  email: ""

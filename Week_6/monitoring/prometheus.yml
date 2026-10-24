@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+scrape_configs:
+  - job_name: iris-mlops-demo
+    static_configs:
+      - targets: ["mlops-demo:8000"]

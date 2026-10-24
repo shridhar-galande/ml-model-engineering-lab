@@ -1,0 +1,3 @@
+services:
+  mlops-demo:
+    image: ${MLOPS_IMAGE:?Set MLOPS_IMAGE to the GHCR image reference}
