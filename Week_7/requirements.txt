@@ -1,0 +1,29 @@
+# Week 7 Lab — Model Standardization and Optimization
+# Install with: pip install -r requirements.txt
+#
+# Tested with Python 3.9 - 3.11.
+
+# --- Core ML / deep learning ---
+tensorflow>=2.13.0         # includes tf.keras; use tensorflow-cpu if you don't need GPU support
+
+# --- ONNX ecosystem (Lab 1) ---
+tf2onnx>=1.15.0            # Keras/TensorFlow -> ONNX conversion
+onnx>=1.14.0
+onnxruntime>=1.15.0
+onnxoptimizer>=0.3.13      # optional graph-fusion step in Lab 1; lab runs fine without it
+
+# --- Quantization (Lab 2) ---
+onnxruntime-extensions>=0.9.0   # optional, only needed for some quantization ops
+
+# --- Numerics / utilities ---
+numpy>=1.24.0
+matplotlib>=3.7.0          # used in Lab 3's benchmarking dashboard
+
+# --- Notebook support ---
+jupyter>=1.0.0
+ipykernel>=6.25.0
+numpy
+pandas
+matplotlib
+scikit-learn
+skl2onnx
