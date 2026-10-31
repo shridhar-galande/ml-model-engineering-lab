@@ -52,7 +52,7 @@ python -m pip install -r requirements.txt
 Run scripts from the project root:
 
 ```bash
-python lab0_sklearn_onnx/sklearn_onnx_iris.py
+python lab0_sklearn_onnx/lab0_sklearn_onnx_iris.py
 python lab1_onnx_conversion/lab1_onnx_conversion.py
 python lab2_compression/lab2_compression.py
 python lab3_benchmarking/lab3_benchmarking.py
