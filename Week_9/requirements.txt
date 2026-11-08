@@ -1,0 +1,8 @@
+# Requirements for: Feast_MLflow_Iris_Feature_Store.ipynb
+feast==0.64.0
+scikit-learn==1.8.0
+pandas==2.3.3
+numpy==2.4.4
+jsonschema<5
+isoduration==20.11.0
+
