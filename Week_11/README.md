@@ -55,9 +55,4 @@ NHANES-I are fetched automatically by `shap.datasets` on first run (small one-ti
 
 Run the notebook top to bottom, or jump directly to any single block — each is self-contained.
 
-## Design Conventions
-
-- **Deck:** dark navy/teal palette (`#0B2545` / `#1C7293`), Cambria headings, Calibri body, no
-  emojis, no slide timestamps
-- **Notebook:** matching navy/teal/coral palette for all charts, no timestamps, real datasets
-  throughout (no synthetic data)
+---
